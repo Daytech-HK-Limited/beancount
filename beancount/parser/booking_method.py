@@ -109,7 +109,54 @@ def booking_method_STRICT(entry, posting, matches):
         match_units = Amount(number * sign, match.units.currency)
         booked_reductions.append(posting._replace(units=match_units, cost=match.cost))
         booked_matches.append(match)
-        insufficient = match_units.number != posting.units.number
+        
+        # Check if there's a remaining amount
+        if match_units.number != posting.units.number:
+            remaining = abs(posting.units.number) - abs(match_units.number)
+            
+            # Get the cost information from the original posting
+            original_cost = posting.cost
+            if original_cost is not None:
+                # Convert CostSpec to Cost for the remaining portion
+                from beancount.core.position import Cost, CostSpec
+                from beancount.core.number import MISSING
+                if isinstance(original_cost, CostSpec):
+                    # Check if the user provided explicit cost information (not MISSING)
+                    # Only create a negative lot if explicit cost was provided
+                    cost_number = original_cost.number_per
+                    if cost_number is MISSING or cost_number is None:
+                        if original_cost.number_total is not None:
+                            # Calculate per-unit cost from total cost
+                            cost_number = original_cost.number_total / abs(posting.units.number)
+                        else:
+                            # No explicit cost provided, mark as insufficient
+                            insufficient = True
+                            return booked_reductions, booked_matches, errors, insufficient
+                    
+                    cost_currency = original_cost.currency
+                    # If currency is also MISSING, we can't create a negative lot
+                    if cost_currency is MISSING:
+                        insufficient = True
+                        return booked_reductions, booked_matches, errors, insufficient
+                    
+                    cost_date = original_cost.date if original_cost.date is not None else entry.date
+                    cost_label = original_cost.label
+                    new_cost = Cost(cost_number, cost_currency, cost_date, cost_label)
+                else:
+                    # Already a Cost instance, use it directly
+                    new_cost = original_cost
+                
+                # Create a new posting for the remaining amount with the specified cost
+                booked_reductions.append(
+                    posting._replace(
+                        units=Amount(remaining * sign, posting.units.currency),
+                        cost=new_cost
+                    )
+                )
+                # Don't mark as insufficient since we handled it by creating a negative lot
+                insufficient = False
+            else:
+                insufficient = True
 
     return booked_reductions, booked_matches, errors, insufficient
 
@@ -188,8 +235,52 @@ def _booking_method_xifo(entry, posting, matches, sortattr, reverse_order):
         booked_matches.append(match)
         remaining -= size
 
-    # If we couldn't eat up all the requested reduction, return an error.
-    insufficient = remaining > ZERO
+    # If we couldn't eat up all the requested reduction, check if we can create
+    # a new negative lot with explicit cost information.
+    if remaining > ZERO:
+        # Get the cost information from the original posting
+        original_cost = posting.cost
+        if original_cost is not None:
+            # Convert CostSpec to Cost for the remaining portion
+            from beancount.core.position import Cost, CostSpec
+            from beancount.core.number import MISSING
+            if isinstance(original_cost, CostSpec):
+                # Check if the user provided explicit cost information (not MISSING)
+                # Only create a negative lot if explicit cost was provided
+                cost_number = original_cost.number_per
+                if cost_number is MISSING or cost_number is None:
+                    if original_cost.number_total is not None:
+                        # Calculate per-unit cost from total cost
+                        cost_number = original_cost.number_total / abs(posting.units.number)
+                    else:
+                        # No explicit cost provided, mark as insufficient
+                        insufficient = True
+                        return booked_reductions, booked_matches, errors, insufficient
+                
+                cost_currency = original_cost.currency
+                # If currency is also MISSING, we can't create a negative lot
+                if cost_currency is MISSING:
+                    insufficient = True
+                    return booked_reductions, booked_matches, errors, insufficient
+                
+                cost_date = original_cost.date if original_cost.date is not None else entry.date
+                cost_label = original_cost.label
+                new_cost = Cost(cost_number, cost_currency, cost_date, cost_label)
+            else:
+                # Already a Cost instance, use it directly
+                new_cost = original_cost
+            
+            # Create a new posting for the remaining amount with the specified cost
+            booked_reductions.append(
+                posting._replace(
+                    units=Amount(remaining * sign, posting.units.currency),
+                    cost=new_cost
+                )
+            )
+            # Don't mark as insufficient since we handled it by creating a negative lot
+            insufficient = False
+        else:
+            insufficient = True
 
     return booked_reductions, booked_matches, errors, insufficient
 
