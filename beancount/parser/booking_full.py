@@ -639,16 +639,40 @@ def book_reductions(entry, group_postings, balances, methods):
 
                 # Check for ambiguous matches.
                 if len(matches) == 0:
-                    errors.append(
-                        ReductionError(
-                            entry.meta,
-                            'No position matches "{}" against balance {}'.format(
-                                posting, balance
-                            ),
-                            entry,
+                    # If no matches found but user provided explicit cost, try matching
+                    # without the cost number filter to allow creating negative lots
+                    if cost_number is not None:
+                        for position in balance:
+                            # Skip inventory contents of a different currency.
+                            if units.currency and position.units.currency != units.currency:
+                                continue
+                            # Skip balance positions not held at cost.
+                            if position.cost is None:
+                                continue
+                            # Ignore cost number - allow matching with different cost
+                            if (
+                                isinstance(costspec.currency, str)
+                                and position.cost.currency != costspec.currency
+                            ):
+                                continue
+                            if costspec.date and position.cost.date != costspec.date:
+                                continue
+                            if costspec.label and position.cost.label != costspec.label:
+                                continue
+                            matches.append(position)
+                    
+                    # If still no matches, report error
+                    if len(matches) == 0:
+                        errors.append(
+                            ReductionError(
+                                entry.meta,
+                                'No position matches "{}" against balance {}'.format(
+                                    posting, balance
+                                ),
+                                entry,
+                            )
                         )
-                    )
-                    return [], errors  # This is irreconcilable, remove these postings.
+                        return [], errors  # This is irreconcilable, remove these postings.
 
                 # TODO(blais): We'll have to change this, as we want to allow
                 # positions crossing from negative to positive and vice-versa in
