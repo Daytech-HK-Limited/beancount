@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs grep *)",
+      "Bash(xargs wc *)",
+      "Bash(python *)",
+      "Bash(pip show *)",
+      "Bash(pip list *)",
+      "Bash(pip install *)",
+      "Bash(BEANCOUNT_FILE=examples/example.beancount python run_server.py)",
+      "Bash(curl -s http://localhost:8000/health)",
+      "Bash(curl -s \"http://localhost:8000/balances?account=Assets%3A*\")",
+      "Bash(kill %1)",
+      "Bash(curl -s \"http://localhost:8000/transactions?date_from=2014-01-01&date_to=2014-01-31&limit=3\")",
+      "Bash(curl -s \"http://localhost:8000/report/income?date_from=2014-01-01&date_to=2014-12-31\")",
+      "Bash(curl -s \"http://localhost:8000/report/balance_sheet\")"
+    ]
+  }
+}
