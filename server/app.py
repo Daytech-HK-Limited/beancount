@@ -120,7 +120,7 @@ def health():
         "status": "ok" if all_ok else "degraded",
         "ledgers": {
             lid: {
-                "status": "ok" if s.is_loaded else "loading",
+                "status": "reloading" if s.is_reloading else ("ok" if s.error_count == 0 else "error"),
                 "entries": s.entry_count,
                 "errors": s.error_count,
                 "loaded_at": s.loaded_at,

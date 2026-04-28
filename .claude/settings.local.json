@@ -19,7 +19,9 @@
       "Bash(curl -s http://localhost:8000/ledgers)",
       "Bash(curl -s http://localhost:8000/ledgers/unknown_company/balances)",
       "Bash(curl -s \"http://localhost:8000/ledgers/company_b/transactions?limit=2\")",
-      "Bash(curl -s http://localhost:8000/ledgers/unknown/balances)"
+      "Bash(curl -s http://localhost:8000/ledgers/unknown/balances)",
+      "Bash(curl -s \"http://localhost:8000/ledgers/company_a/report/balance_sheet\")",
+      "Bash(curl -s \"http://localhost:8000/ledgers/company_a/report/income?date_from=2014-01-01&date_to=2014-12-31\")"
     ]
   }
 }

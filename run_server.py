@@ -25,10 +25,11 @@ sys.path.append(_here)
 import uvicorn
 
 if __name__ == "__main__":
+    port = int(os.environ.get("PORT", "8000"))
     uvicorn.run(
         "server.app:app",
         host="0.0.0.0",
-        port=8000,
+        port=port,
         workers=1,
         log_level="info",
     )

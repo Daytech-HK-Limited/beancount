@@ -24,7 +24,7 @@ def get_transactions(
     narration: Optional[str] = Query(None, description="Narration substring (case-insensitive)"),
     tag: Optional[str] = Query(None, description="Exact tag match"),
     flag: Optional[str] = Query(None, description="Flag character, e.g. * or !"),
-    limit: int = Query(100, ge=1, le=10000, description="Max results to return"),
+    limit: int = Query(100, ge=1, le=100_000, description="Max results to return"),
     offset: int = Query(0, ge=0, description="Number of results to skip"),
 ):
     entries, _, _ = ledger

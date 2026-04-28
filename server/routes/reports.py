@@ -8,8 +8,7 @@ from fastapi import APIRouter, Depends, Query
 
 from beancount.core import realization, data as bdata
 from beancount.parser import options as boptions
-from server.routes.deps import get_ledger
-from server.cache import get_realized
+from server.routes.deps import get_ledger, get_ledger_with_root
 from server.utils import serialize_inventory
 
 logger = logging.getLogger(__name__)
@@ -18,19 +17,18 @@ router = APIRouter()
 
 @router.get("/report/balance_sheet")
 def balance_sheet(
-    ledger=Depends(get_ledger),
+    ledger=Depends(get_ledger_with_root),
     date: Optional[datetime.date] = Query(None, description="As-of date (YYYY-MM-DD); defaults to all entries"),
 ):
-    entries, _, options_map = ledger
+    entries, _, options_map, real_root = ledger
     account_types = boptions.get_account_types(options_map)
 
-    if date is None:
-        real_root = get_realized(entries)
-    else:
+    if date is not None:
         scoped = list(bdata.iter_entry_dates(
             entries, datetime.date.min, date + datetime.timedelta(days=1)
         ))
         real_root = realization.realize(scoped)
+    # else: use pre-computed real_root
 
     assets, liabilities, equity = [], [], []
     for ra in realization.iter_children(real_root):
@@ -62,8 +60,7 @@ def income_statement(
     account_types = boptions.get_account_types(options_map)
 
     period_end = (date_to or datetime.date.today()) + datetime.timedelta(days=1)
-    begin = date_from or datetime.date.min
-    scoped = list(bdata.iter_entry_dates(entries, begin, period_end))
+    scoped = list(bdata.iter_entry_dates(entries, date_from or datetime.date.min, period_end))
     real_root = realization.realize(scoped)
 
     income, expenses = [], []
