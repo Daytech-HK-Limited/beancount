@@ -1,13 +1,13 @@
-"""GET /transactions — filtered, paginated transaction history."""
+"""GET /ledgers/{ledger_id}/transactions — filtered, paginated transaction history."""
 
 import datetime
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 
 from beancount.core import data as bdata
-from server.state import state
+from server.routes.deps import get_ledger
 from server.utils import serialize_transaction
 
 logger = logging.getLogger(__name__)
@@ -16,22 +16,19 @@ router = APIRouter()
 
 @router.get("/transactions")
 def get_transactions(
-    account: Optional[str] = Query(None, description="Account name (exact or substring match)"),
+    ledger=Depends(get_ledger),
+    account: Optional[str] = Query(None, description="Account substring (case-insensitive)"),
     date_from: Optional[datetime.date] = Query(None, description="Start date inclusive (YYYY-MM-DD)"),
     date_to: Optional[datetime.date] = Query(None, description="End date inclusive (YYYY-MM-DD)"),
     payee: Optional[str] = Query(None, description="Payee substring (case-insensitive)"),
     narration: Optional[str] = Query(None, description="Narration substring (case-insensitive)"),
-    tag: Optional[str] = Query(None, description="Tag to filter by (exact match)"),
+    tag: Optional[str] = Query(None, description="Exact tag match"),
     flag: Optional[str] = Query(None, description="Flag character, e.g. * or !"),
     limit: int = Query(100, ge=1, le=10000, description="Max results to return"),
     offset: int = Query(0, ge=0, description="Number of results to skip"),
 ):
-    """Return filtered transactions. Uses O(log n) date slicing when date_from/date_to are set."""
-    entries, _, _ = state.get()
-    if not entries:
-        raise HTTPException(status_code=503, detail="Ledger not yet loaded")
+    entries, _, _ = ledger
 
-    # Use bisect-based date slicing when bounds are given (O(log n))
     if date_from is not None or date_to is not None:
         begin = date_from or datetime.date.min
         end = (date_to + datetime.timedelta(days=1)) if date_to else datetime.date.max
@@ -39,16 +36,11 @@ def get_transactions(
     else:
         candidates = iter(entries)
 
-    # Filter to transactions only
     txns = bdata.filter_txns(candidates)
 
-    # Apply remaining filters
     if account:
         account_lower = account.lower()
-        txns = (
-            t for t in txns
-            if any(account_lower in p.account.lower() for p in t.postings)
-        )
+        txns = (t for t in txns if any(account_lower in p.account.lower() for p in t.postings))
     if payee:
         payee_lower = payee.lower()
         txns = (t for t in txns if t.payee and payee_lower in t.payee.lower())
@@ -60,7 +52,6 @@ def get_transactions(
     if flag:
         txns = (t for t in txns if t.flag == flag)
 
-    # Paginate — consume generator with offset + limit
     result = []
     total_seen = 0
     for txn in txns:
@@ -71,9 +62,4 @@ def get_transactions(
             break
         result.append(serialize_transaction(txn))
 
-    return {
-        "transactions": result,
-        "count": len(result),
-        "offset": offset,
-        "limit": limit,
-    }
+    return {"transactions": result, "count": len(result), "offset": offset, "limit": limit}

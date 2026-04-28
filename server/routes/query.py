@@ -1,13 +1,13 @@
-"""POST /query — run arbitrary BQL against in-memory entries."""
+"""POST /ledgers/{ledger_id}/query — run arbitrary BQL against in-memory entries."""
 
-import decimal
 import datetime
+import decimal
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from server.state import state
+from server.routes.deps import get_ledger
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -23,14 +23,12 @@ def _to_json(value):
         return value.isoformat()
     if isinstance(value, (set, frozenset)):
         return sorted(str(v) for v in value)
-    # Inventory (dict subclass): serialize as list of position dicts
     try:
         from beancount.core.inventory import Inventory
         if isinstance(value, Inventory):
             return [_to_json(pos) for pos in value]
     except ImportError:
         pass
-    # NamedTuples (Amount, Position, Cost, etc.)
     if hasattr(value, "_asdict"):
         return {k: _to_json(v) for k, v in value._asdict().items()}
     if isinstance(value, (list, tuple)):
@@ -45,8 +43,8 @@ class QueryRequest(BaseModel):
 
 
 @router.post("/query")
-def run_query(body: QueryRequest):
-    """Run a BQL query string against the in-memory ledger.
+def run_query(body: QueryRequest, ledger=Depends(get_ledger)):
+    """Run a BQL query string against the named in-memory ledger.
 
     Requires the `beanquery` package (`pip install beanquery`).
     """
@@ -58,9 +56,7 @@ def run_query(body: QueryRequest):
             detail="beanquery package is not installed. Run: pip install beanquery",
         )
 
-    entries, _, options_map = state.get()
-    if not entries:
-        raise HTTPException(status_code=503, detail="Ledger not yet loaded")
+    entries, _, options_map = ledger
 
     try:
         rtypes, rrows = bql_run_query(entries, options_map, body.sql)

@@ -1,14 +1,14 @@
-"""GET /balances — account balances with optional date and glob filter."""
+"""GET /ledgers/{ledger_id}/balances — account balances with optional date and glob filter."""
 
 import datetime
 import fnmatch
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 
 from beancount.core import realization, data as bdata
-from server.state import state
+from server.routes.deps import get_ledger
 from server.cache import get_realized
 from server.utils import serialize_inventory
 
@@ -17,7 +17,6 @@ router = APIRouter()
 
 
 def _iter_matching_accounts(real_root, pattern: Optional[str]):
-    """Yield (account_name, real_account) for all accounts matching pattern."""
     for real_account in realization.iter_children(real_root):
         if not real_account.account:
             continue
@@ -27,28 +26,26 @@ def _iter_matching_accounts(real_root, pattern: Optional[str]):
 
 @router.get("/balances")
 def get_balances(
+    ledger=Depends(get_ledger),
     account: Optional[str] = Query(None, description="Account glob pattern, e.g. Assets:*"),
     date: Optional[datetime.date] = Query(None, description="Balance as of this date (YYYY-MM-DD)"),
 ):
-    """Return account balances. Optionally filter by account glob and/or date."""
-    entries, _, _ = state.get()
-    if not entries:
-        raise HTTPException(status_code=503, detail="Ledger not yet loaded")
+    entries, _, _ = ledger
 
     if date is not None:
-        # Scope entries up to and including the given date
-        scoped = list(bdata.iter_entry_dates(entries, datetime.date.min, date + datetime.timedelta(days=1)))
+        scoped = list(bdata.iter_entry_dates(
+            entries, datetime.date.min, date + datetime.timedelta(days=1)
+        ))
         real_root = realization.realize(scoped)
     else:
         real_root = get_realized(entries)
 
     result = []
     for real_account in _iter_matching_accounts(real_root, account):
-        balance = real_account.balance
-        if not balance.is_empty():
+        if not real_account.balance.is_empty():
             result.append({
                 "account": real_account.account,
-                "balance": serialize_inventory(balance),
+                "balance": serialize_inventory(real_account.balance),
             })
 
     result.sort(key=lambda r: r["account"])

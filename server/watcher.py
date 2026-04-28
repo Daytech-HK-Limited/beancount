@@ -1,4 +1,4 @@
-"""File change watcher — polls .beancount file mtimes and triggers hot reload."""
+"""File change watcher — polls all registered ledger files and triggers hot reload."""
 
 import logging
 import os
@@ -11,28 +11,32 @@ logger = logging.getLogger(__name__)
 class FileWatcher:
     POLL_INTERVAL = 2.0
 
-    def __init__(self, state, debounce_seconds: float = 3.0):
-        self._state = state
+    def __init__(self, registry, debounce_seconds: float = 3.0):
+        self._registry = registry
         self._debounce = debounce_seconds
-        self._last_reload = 0.0
+        self._last_reload: dict[str, float] = {}  # ledger_id → timestamp
         self._stop_event = threading.Event()
         self._thread = None
-        self._filename = None
 
-    def start(self, filename: str) -> None:
-        self._filename = filename
-        self._thread = threading.Thread(target=self._loop, daemon=True, name="beancount-watcher")
+    def start(self) -> None:
+        self._thread = threading.Thread(
+            target=self._loop, daemon=True, name="beancount-watcher"
+        )
         self._thread.start()
-        logger.info("File watcher started for %s", filename)
+        ids = self._registry.ledger_ids()
+        logger.info("File watcher started for ledgers: %s", ids)
 
     def stop(self) -> None:
         self._stop_event.set()
         if self._thread:
             self._thread.join(timeout=5)
 
-    def _snapshot(self) -> dict:
-        _, _, options_map = self._state.get()
-        filenames = list(options_map.get("include", [self._filename]))
+    def _snapshot(self, state) -> dict:
+        """Return {filename: (mtime_ns, size)} for all files included by this ledger."""
+        _, _, options_map = state.get()
+        filenames = list(options_map.get("include", []))
+        if state.filename and state.filename not in filenames:
+            filenames.append(state.filename)
         result = {}
         for fname in filenames:
             try:
@@ -43,22 +47,31 @@ class FileWatcher:
         return result
 
     def _loop(self) -> None:
-        last = {}
+        last: dict[str, dict] = {}  # ledger_id → file snapshot
+
         while not self._stop_event.wait(timeout=self.POLL_INTERVAL):
-            try:
-                current = self._snapshot()
-                if last and current != last:
-                    now = time.time()
-                    if now - self._last_reload >= self._debounce:
-                        changed = [f for f in current if current.get(f) != last.get(f)]
-                        logger.info("Change detected in %s, reloading...", changed)
-                        self._last_reload = now
-                        threading.Thread(
-                            target=self._state.load,
-                            args=(self._filename,),
-                            daemon=True,
-                            name="beancount-reload",
-                        ).start()
-                last = current
-            except Exception:
-                logger.exception("Error in file watcher loop")
+            for ledger_id, state in self._registry.all().items():
+                try:
+                    current = self._snapshot(state)
+                    prev = last.get(ledger_id, {})
+
+                    if prev and current != prev:
+                        now = time.time()
+                        if now - self._last_reload.get(ledger_id, 0) >= self._debounce:
+                            changed = [f for f in current if current.get(f) != prev.get(f)]
+                            logger.info(
+                                "[%s] Change detected in %s, reloading...",
+                                ledger_id, changed,
+                            )
+                            self._last_reload[ledger_id] = now
+                            filename = state.filename
+                            threading.Thread(
+                                target=state.load,
+                                args=(filename,),
+                                daemon=True,
+                                name=f"beancount-reload-{ledger_id}",
+                            ).start()
+
+                    last[ledger_id] = current
+                except Exception:
+                    logger.exception("[%s] Error in file watcher loop", ledger_id)
