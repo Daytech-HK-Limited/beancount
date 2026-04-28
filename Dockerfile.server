@@ -1,0 +1,19 @@
+FROM python:3.13-slim
+
+WORKDIR /app
+
+COPY requirements-server.txt .
+RUN pip install --no-cache-dir -r requirements-server.txt
+
+# Copy only the server package and entry point.
+# Do NOT copy the local beancount/ source directory — the installed PyPI wheel
+# (pulled in by requirements-server.txt via beanquery's dependency) is used instead.
+COPY server/ ./server/
+COPY run_server.py .
+
+ENV BEANCOUNT_FILE=/ledger/main.beancount
+ENV PORT=8000
+
+EXPOSE 8000
+
+CMD ["python", "run_server.py"]
