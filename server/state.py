@@ -22,6 +22,9 @@ class BeancountState:
         # Starts clear so the very first request waits for the initial load.
         self._ready = threading.Event()
 
+        # Serializes concurrent load() calls (e.g. file watcher racing with /reload).
+        self._reload_lock = threading.Lock()
+
         self._entries = []
         self._errors = []
         self._options_map = {}
@@ -30,10 +33,14 @@ class BeancountState:
         self._filename = None
 
     # ------------------------------------------------------------------
-    # Write path (called from the watcher background thread)
+    # Write path (called from the watcher thread or explicit /reload)
     # ------------------------------------------------------------------
 
     def load(self, filename: str) -> None:
+        with self._reload_lock:
+            self._do_load(filename)
+
+    def _do_load(self, filename: str) -> None:
         t0 = time.time()
         logger.info("[%s] Loading %s ...", self.ledger_id, filename)
 

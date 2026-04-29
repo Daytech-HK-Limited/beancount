@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from server.state import registry
 from server.watcher import FileWatcher
-from server.routes import query, balances, transactions, reports
+from server.routes import query, balances, transactions, reports, admin
 
 logging.basicConfig(
     level=logging.INFO,
@@ -94,6 +94,7 @@ app.include_router(query.router,        prefix="/ledgers/{ledger_id}", tags=["Qu
 app.include_router(balances.router,     prefix="/ledgers/{ledger_id}", tags=["Balances"])
 app.include_router(transactions.router, prefix="/ledgers/{ledger_id}", tags=["Transactions"])
 app.include_router(reports.router,      prefix="/ledgers/{ledger_id}", tags=["Reports"])
+app.include_router(admin.router,        prefix="/ledgers/{ledger_id}", tags=["Admin"])
 
 
 @app.get("/ledgers", tags=["Ledgers"])
