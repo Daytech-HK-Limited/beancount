@@ -495,6 +495,67 @@ Forces an **immediate synchronous reload** of the specified ledger. Blocks until
 
 ---
 
+### POST /ledgers/{ledger_id}/check-reload
+
+**Conditional reload** — checks file mtimes and sizes against the snapshot taken at the last load, and only triggers a full reload if at least one source file has changed. Returns immediately with no work done when files are unchanged.
+
+Use this instead of `/reload` when you want to avoid redundant reloads (e.g. calling after every write but not always knowing if the ledger was actually modified).
+
+**Path parameters**
+
+| Name | Description |
+|------|-------------|
+| `ledger_id` | Ledger ID to check |
+
+**Request body:** none
+
+**Response 200 — files unchanged, no reload performed**
+
+```json
+{
+  "status": "up_to_date",
+  "reloaded": false,
+  "changed_files": [],
+  "entries": 6966,
+  "errors": 17,
+  "loaded_at": 1714000012.456
+}
+```
+
+**Response 200 — files changed, reload performed (blocks until complete)**
+
+```json
+{
+  "status": "ok",
+  "reloaded": true,
+  "changed_files": [
+    "/app/beancount-data/677ea004/main-677ea004.beancount"
+  ],
+  "entries": 6980,
+  "errors": 17,
+  "loaded_at": 1714000045.123
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | `"up_to_date"` / `"ok"` | `"up_to_date"` = nothing changed, `"ok"` = reload completed |
+| `reloaded` | boolean | Whether a reload was triggered |
+| `changed_files` | string[] | Paths of files that differed (empty when `reloaded=false`) |
+| `entries` | integer | Current entry count after the operation |
+| `errors` | integer | Current error count |
+| `loaded_at` | float | Unix timestamp of the current loaded state |
+
+**Error responses**
+
+| Status | Condition |
+|--------|-----------|
+| 404 | `ledger_id` not found |
+| 500 | Reload was triggered but failed |
+| 503 | Ledger has no filename set |
+
+---
+
 ## Error Response Format
 
 All errors use the standard FastAPI shape:

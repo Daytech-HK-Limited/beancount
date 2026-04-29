@@ -31,6 +31,8 @@ class BeancountState:
         self._real_root = None
         self._loaded_at = None
         self._filename = None
+        # {filepath: (mtime_ns, size)} captured after each successful load.
+        self._file_snapshot: dict[str, tuple[int, int]] = {}
 
     # ------------------------------------------------------------------
     # Write path (called from the watcher thread or explicit /reload)
@@ -64,6 +66,7 @@ class BeancountState:
                 self._real_root = real_root
                 self._loaded_at = time.time()
                 self._filename = filename
+                self._file_snapshot = self._take_snapshot(filename, options_map)
 
             if errors:
                 logger.warning(
@@ -78,6 +81,39 @@ class BeancountState:
         finally:
             # Always unblock waiting requests, even if load failed.
             self._ready.set()
+
+    @staticmethod
+    def _take_snapshot(filename: str, options_map: dict) -> dict[str, tuple[int, int]]:
+        """Return {filepath: (mtime_ns, size)} for the main file and all includes."""
+        filenames = list(options_map.get("include", []))
+        if filename not in filenames:
+            filenames.append(filename)
+        snapshot = {}
+        for fname in filenames:
+            try:
+                st = os.stat(fname)
+                snapshot[fname] = (st.st_mtime_ns, st.st_size)
+            except OSError:
+                pass
+        return snapshot
+
+    def changed_files(self) -> list[str]:
+        """Return paths of files that changed on disk since the last load.
+
+        Compares current mtime_ns + size against the snapshot taken at load time.
+        An empty list means nothing has changed and a reload would be a no-op.
+        """
+        with self._lock:
+            snapshot = dict(self._file_snapshot)
+        changed = []
+        for fname, (mtime_ns, size) in snapshot.items():
+            try:
+                st = os.stat(fname)
+                if (st.st_mtime_ns, st.st_size) != (mtime_ns, size):
+                    changed.append(fname)
+            except OSError:
+                changed.append(fname)  # file disappeared — treat as changed
+        return changed
 
     # ------------------------------------------------------------------
     # Read path (called from request handlers — blocks during reload)
